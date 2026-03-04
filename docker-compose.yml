@@ -1,0 +1,44 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: vibe-postgres
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: vibe_booking
+      POSTGRES_USER: vibe
+      POSTGRES_PASSWORD: vibe123
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U vibe -d vibe_booking" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  web:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: vibe-web
+    ports:
+      - "8000:8000"
+    env_file:
+      - ./backend/.env
+    environment:
+      # 容器內透過 service name 連接 postgres
+      DB_HOST: postgres
+      DB_PORT: 5432
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      # 掛載原始碼以支援開發熱重載
+      - ./backend:/app
+      # seed.sql 掛載至容器內，由 entrypoint.sh 透過 dbshell 執行
+      - ./seed.sql:/app/seed.sql:ro
+
+volumes:
+  pgdata:
