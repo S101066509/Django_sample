@@ -159,49 +159,31 @@ class BookingViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         user = self.request.user
-        if user.is_staff:
-            return Booking.objects.all()
-        return Booking.objects.filter(student=user)
+        bookings = Booking.objects.all()
+        if self.action in ("update", "partial_update"):
+            bookings = bookings.select_for_update()
+        return bookings if user.is_staff else bookings.filter(student=user)
 
-    def create(self, request, *args, **kwargs):
-        data = request.data.copy()
-        course_type_id = data.get('course_type')
-        start_datetime = data.get('start_datetime')
+    def perform_create(self, serializer):
+        serializer.save(student=self.request.user)
 
-        try:
-            course_type = CourseType.objects.get(id=course_type_id)
-        except CourseType.DoesNotExist:
-            return Response({"error": {"code": "VALIDATION_ERROR", "message": "Invalid course_type"}}, status=status.HTTP_400_BAD_REQUEST)
+    @transaction.atomic
+    def update(self, request, *args, **kwargs):
+        return super().update(request, *args, **kwargs)
 
-        # 為了安全，結束時間由後端依據課程類型自動計算
-        try:
-            start_dt = datetime.fromisoformat(start_datetime.replace('Z', '+00:00'))
-            end_dt = start_dt + timedelta(minutes=course_type.duration_minutes)
-        except (ValueError, TypeError):
-            return Response({"error": {"code": "VALIDATION_ERROR", "message": "Invalid start_datetime format"}}, status=status.HTTP_400_BAD_REQUEST)
-
-        serializer = self.get_serializer(data=data)
-        serializer.is_valid(raise_exception=True)
-
-        try:
-            with transaction.atomic():
-                booking = Booking(**serializer.validated_data)
-                booking.student = request.user
-                booking.end_datetime = end_dt
-                # 觸發 model.clean() 來執行所有的商業邏輯驗證（例如 08:00 - 21:30、0/30分限制）
-                booking.full_clean()
-                booking.save()
-        except IntegrityError:
-            return Response({
-                "error": {
-                    "code": "SLOT_TAKEN",
-                    "message": "This slot is already booked"
-                }
-            }, status=status.HTTP_409_CONFLICT)
-
-        headers = self.get_success_headers(serializer.validated_data)
-        response_serializer = self.get_serializer(booking)
-        return Response(response_serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+    def handle_exception(self, exc):
+        if isinstance(exc, IntegrityError):
+            cause = exc.__cause__
+            constraint = getattr(getattr(cause, "diag", None), "constraint_name", None)
+            if constraint == "uniq_booked_slot_per_instructor" or (
+                "UNIQUE constraint failed: bookings_booking.instructor_id, bookings_booking.start_datetime"
+                in str(cause)
+            ):
+                return Response(
+                    {"error": {"code": "SLOT_TAKEN", "message": "This slot is already booked"}},
+                    status=status.HTTP_409_CONFLICT,
+                )
+        return super().handle_exception(exc)
 
     def destroy(self, request, *args, **kwargs):
         """取消預約：採用軟刪除 (Soft-delete)，將狀態改為 CANCELED 而非實際刪除資料。"""

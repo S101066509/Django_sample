@@ -6,7 +6,7 @@
 from rest_framework import serializers
 from django.contrib.auth.models import User
 from .models import Instructor, CourseType, Booking, TimeOff
-from django.utils import timezone
+from django.db import transaction
 from datetime import timedelta
 
 class UserCreateSerializer(serializers.ModelSerializer):
@@ -57,6 +57,8 @@ class BookingSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Booking
+        # The database checks the conditional unique slot atomically, including on PATCH.
+        validators = []
         fields = [
             'id', 'instructor', 'instructor_name', 'course_type', 'course_type_name',
             'start_datetime', 'end_datetime', 'status', 'created_at'
@@ -64,7 +66,17 @@ class BookingSerializer(serializers.ModelSerializer):
         # 這些欄位是系統自動產生或計算的，不允許前端透過 API 單方面修改
         read_only_fields = ['id', 'end_datetime', 'status', 'created_at', 'instructor_name', 'course_type_name']
 
-    def validate(self, data):
-        # 額外的複雜商務邏輯驗證（例如時間區間、分數是否合法）
-        # 我們已將其統一寫在 models.py 的 clean() 方法裡，再由 View 層來呼叫觸發
-        return data
+    def create(self, validated_data):
+        return self.update(Booking(), validated_data)
+
+    @transaction.atomic
+    def update(self, instance, validated_data):
+        for field, value in validated_data.items():
+            setattr(instance, field, value)
+        instance.end_datetime = instance.start_datetime + timedelta(
+            minutes=instance.course_type.duration_minutes
+        )
+        # The database enforces the unique slot constraint for concurrent requests.
+        instance.full_clean(validate_constraints=False)
+        instance.save()
+        return instance
