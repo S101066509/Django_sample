@@ -37,7 +37,7 @@ services:
     volumes:
       # 掛載原始碼以支援開發熱重載
       - ./backend:/app
-      # seed.sql 掛載至容器內，由 entrypoint.sh 透過 dbshell 執行
+      # seed.sql 掛載至容器內，供開發者手動匯入測試資料
       - ./seed.sql:/app/seed.sql:ro
 
 volumes:

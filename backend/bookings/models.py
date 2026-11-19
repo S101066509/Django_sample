@@ -127,6 +127,14 @@ class Booking(TimeStampedModel):
             if self.end_datetime != expected_end:
                 self.end_datetime = expected_end
 
+        if self.instructor_id and self.end_datetime and self.status == self.Status.BOOKED:
+            if TimeOff.objects.filter(
+                instructor_id=self.instructor_id,
+                start_datetime__lt=self.end_datetime,
+                end_datetime__gt=self.start_datetime,
+            ).exists():
+                raise ValidationError({"start_datetime": "Instructor is on leave during this slot."})
+
         # 4. 結束時間不可超過 22:00
         if self.end_datetime:
             local_end = self.end_datetime.astimezone(tz)

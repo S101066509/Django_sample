@@ -51,15 +51,22 @@ docker compose up --build
 1. 下載並啟動 PostgreSQL 16 資料庫
 2. 安裝 Python 依賴套件並啟動 Django 容器
 3. 自動執行資料庫遷移 (`python manage.py migrate`)
-4. 自動匯入初始測試假資料 (`seed.sql`)
-5. 啟動 Django 開發伺服器 (Port: 8000)
+4. 啟動 Django 開發伺服器 (Port: 8000)
 
 啟動完成後，您會看到 `Watching for file changes with StatReloader`，此時伺服器已準備就緒！
 您可以透過 `http://localhost:8000/api/docs/` 存取 Swagger API 文件，或是 `http://localhost:8000/admin/` 進入超級管理員後台。
 
 ---
 
-## 預設測試帳號
+## 選用的本機測試資料
+
+若需要以下示範帳號，在本機開發資料庫啟動後執行一次：
+
+```bash
+docker compose exec -T web python manage.py dbshell < seed.sql
+```
+
+正式環境請用 `python manage.py createsuperuser` 建立自己的管理員。
 
 自動匯入的 `seed.sql` 已經為您準備好了三組用於測試的帳號，**所有帳號的密碼皆統一為：`vibe123`**
 
